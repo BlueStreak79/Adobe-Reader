@@ -1,84 +1,62 @@
-# Define the script content as a string
-$scriptContent = @"
-param (
-  [ValidateScript({
-      if ([System.IO.Path]::GetExtension($_) -eq '.zip') { \$true }
-      else { throw "`nThe Path parameter should be an accessible file path to the zip archive (.zip) containing the Adobe Acrobat installation files. Download link: https://helpx.adobe.com/acrobat/kb/acrobat-dc-downloads.html" }
-    })]
-  [System.IO.FileInfo]\$Path # Optional local path to setup archive.
-)
-
-# Variables
-\$Archive = "\$env:temp\AdobeAcrobat.zip"
-\$InstallerPath = "\$env:temp\Adobe Acrobat"
-\$Installer = "\$InstallerPath\Setup.exe"
-\$DownloadURL = 'https://trials.adobe.com/AdobeProducts/APRO/Acrobat_HelpX/win32/Acrobat_DC_Web_WWMUI.zip'
-\$LogFile = "\$env:temp\AdobeAcrobatInstall.log"
-
-# Logging function
+# Function to log messages
 function Write-Log {
-  param (
-    [string]\$Message
-  )
-  \$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-  \$logMessage = "\$timestamp - \$Message"
-  Write-Output \$logMessage | Out-File -FilePath \$LogFile -Append -Force
+    param (
+        [string]$Message
+    )
+    $LogTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $LogMessage = "$LogTime - $Message"
+    Add-content -Path $LogFile -Value $LogMessage
 }
 
-# Log start
-Write-Log "Starting Adobe Acrobat DC installation script."
+# Set log file path
+$LogFile = "$env:TEMP\AcrobatReaderInstallation.log"
 
+# Function to check if Adobe Reader is already installed
+function Is-AdobeReaderInstalled {
+    return (Get-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object {$_.DisplayName -like "Adobe Acrobat Reader DC"} -ErrorAction SilentlyContinue) -ne $null
+}
+
+# Main script
 try {
-  # Download or copy setup files
-  if (\$Path) {
-    Write-Log "Using local archive: \$Path"
-    Copy-Item -Path \$Path.FullName -Destination \$Archive -Force
-  }
-  else {
-    Write-Log "Downloading setup files from \$DownloadURL"
-    Invoke-WebRequest -Uri \$DownloadURL -OutFile \$Archive
-  }
-  
-  # Check if the archive was downloaded or copied successfully
-  if (-Not (Test-Path -Path \$Archive)) {
-    throw "Failed to acquire the setup archive."
-  }
+    # Check if Adobe Reader is already installed
+    if (Is-AdobeReaderInstalled) {
+        Write-Log "Adobe Acrobat Reader DC is already installed."
+        Write-Host "Adobe Acrobat Reader DC is already installed."
+    }
+    else {
+        # URL to download Adobe Acrobat Reader DC installer
+        $DownloadURL = "https://ardownload2.adobe.com/pub/adobe/reader/win/AcrobatDC/2101320077/AcroRdrDC2101320077_en_US.exe"
 
-  # Extract installer
-  Write-Log "Extracting setup files to \$env:temp"
-  Expand-Archive -Path \$Archive -DestinationPath \$env:temp -Force
+        # Path to store the downloaded installer
+        $InstallerPath = "$env:TEMP\AcrobatReaderInstaller.exe"
 
-  # Check if the installer executable exists
-  if (-Not (Test-Path -Path \$Installer)) {
-    throw "Failed to extract the installer. Setup.exe not found."
-  }
+        # Download Adobe Acrobat Reader DC installer
+        Write-Log "Downloading Adobe Acrobat Reader DC installer..."
+        Invoke-WebRequest -Uri $DownloadURL -OutFile $InstallerPath
 
-  # Install Acrobat
-  Write-Log "Starting installation of Adobe Acrobat DC."
-  Start-Process -Wait -FilePath \$Installer -ArgumentList '/sAll /rs /msi EULA_ACCEPT=YES'
-  Write-Log "Adobe Acrobat DC installation completed successfully."
+        # Install Adobe Acrobat Reader DC silently
+        Write-Log "Installing Adobe Acrobat Reader DC..."
+        Start-Process -FilePath $InstallerPath -ArgumentList "/sAll /rs /msi EULA_ACCEPT=YES" -Wait
+
+        # Check if installation was successful
+        if (Is-AdobeReaderInstalled) {
+            Write-Log "Adobe Acrobat Reader DC has been installed successfully."
+            Write-Host "Adobe Acrobat Reader DC has been installed successfully."
+        }
+        else {
+            Write-Log "Failed to install Adobe Acrobat Reader DC."
+            Write-Host "Failed to install Adobe Acrobat Reader DC."
+        }
+
+        # Remove the installer file
+        Write-Log "Cleaning up..."
+        Remove-Item -Path $InstallerPath -Force
+    }
 }
 catch {
-  Write-Log "An error occurred: \$_"
-  throw
+    Write-Log "An error occurred: $_"
+    Write-Host "An error occurred: $_"
 }
-finally {
-  # Cleanup
-  Write-Log "Cleaning up temporary files."
-  Remove-Item -Path \$Archive, \$InstallerPath -Recurse -Force -ErrorAction Ignore
-  Write-Log "Cleanup completed."
-  Write-Log "Script finished."
-}
-"@
 
-# Create a temporary file to hold the script
-$tempScriptPath = [System.IO.Path]::Combine($env:TEMP, [System.IO.Path]::GetRandomFileName() + ".ps1")
-
-# Write the script content to the temporary file
-Set-Content -Path $tempScriptPath -Value $scriptContent
-
-# Execute the temporary script
-powershell -ExecutionPolicy Bypass -File $tempScriptPath
-
-# Optionally, clean up the temporary script file
-Remove-Item -Path $tempScriptPath -Force
+# Display log file path
+Write-Host "Installation log file path: $LogFile"
